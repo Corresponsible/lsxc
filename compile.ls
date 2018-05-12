@@ -1,7 +1,7 @@
 require! {
     \fs
     \through
-    \reactify-ls : \reactify
+    \require-ls
     \browserify-incremental : \browserifyInc
     \livescript
     \browserify
@@ -12,12 +12,22 @@ require! {
     \chalk : { red, yellow, gray, green }
     \express
     \vm
-    \javascrypt : { encrypt }
+    \clean-css
+    \html-minifier : { minify } 
+    \uglify-js : UglifyJS
+    \./monadify.ls
+    \reactify-ls : \reactify
 }
 
 
 basedir = process.cwd!
 compileddir = "#{basedir}/.compiled"
+ssrdappdir = "#{basedir}/.compiled-ssr"
+
+minify-html = (it)-> it 
+minify-js = (it)-> UglifyJS.minify(it).code
+minify-css = (css)-> 
+  new clean-css({}).minify(css).styles
 
 base-title = (colored, symbol, text)-->
   text = "[#{colored symbol}] #{colored text}"
@@ -30,15 +40,28 @@ error = base-title red, "x"
 warn  = base-title yellow, "!"
 
 
+ensure-dir = (dir)->
+    fs.mkdir-sync(dir) if not fs.exists-sync(dir)
 
-
-fs.mkdir(compileddir) if not fs.exists-sync(compileddir)
+ensure-dir compileddir
+ensure-dir ssrdappdir
 
 save = (file, content)->
     save-origin "#{compileddir}/#{file}" , content
+
+get-parent = (file)->
+  arr = file.split(\/)
+  arr.pop!
+  arr.join(\/)
+
 save-origin = (file, content)->
     console.log "#{title 'save'} #{file}"
     fs.write-file-sync file , content
+save-ssr = (file, content)->
+    target = "#{ssrdappdir}/#{file}"
+    ensure-dir get-parent target
+    save-origin target , content
+
 
 setup-watch = (commander)->
     return if setup-watch.init
@@ -77,7 +100,7 @@ compile-file = (input, data)->
   state =
     js: null
   try 
-    state.js = livescript.compile code.ls
+    state.js = livescript.compile monadify code.ls
   catch err 
     state.err = err.message
     errorline = err.message.match(/line ([0-9]+)/).1 ? 0
@@ -94,9 +117,16 @@ compile-file = (input, data)->
   { code.ls, code.sass, state.js, state.err}
 apply-variables = (text, variables)->
     apply-variable = (text, name)->
-        text.replace "<#{name}/>", variables[name]
+        text.split("<#{name}/>").join(variables[name])
     Object.keys(variables).reduce(apply-variable, text) 
 compile = (commander, cb)->
+    if commander.jsify? 
+      filename = commander.jsify.replace /\.ls$/,''
+      result = livescript.compile monadify reactify(fs.read-file-sync(filename + ".ls", 'utf8')).ls
+      return fs.write-file-sync(filename + ".js", result)
+    save-ssr-resource = (file, content)->
+      return if commander.ssr isnt yes
+      save-ssr file.replace(get-parent(basedir) + "/", ""), content
     console.log "----------------------"
     cb2 = (err, data)->
       if err?
@@ -112,8 +142,8 @@ compile = (commander, cb)->
          JSON.parse fs.read-file-sync(path).to-string(\utf8)
     sass-c = sass-cache.load!
     #return if file.index-of('.ls') is -1
-    filename = file.replace /\.ls/,''
     return cb2 'File is required' if not file?
+    filename = file.replace /\.ls$/,''
     bundle = if commander.bundle is yes then \bundle else commander.bundle
     bundle-js =  "#{filename}-#{bundle}.js"
     bundle-css = "#{filename}-#{bundle}.css"
@@ -121,6 +151,9 @@ compile = (commander, cb)->
     bundle-html = "#{filename}-#{html}.html"
     sass = if commander.sass is yes then \style else commander.sass
     compilesass = if commander.compilesass is yes then \style else commander.compilesass
+    
+       
+    
     sass-c[commander.compile] = sass-c[commander.compile] ? {}
     make-bundle = (file, callback)->
         console.log "#{title 'start main file'} #file"
@@ -143,9 +176,11 @@ compile = (commander, cb)->
             send = (data)->
                 t.queue data
                 t.queue null
+            save-ssr-resource file, data
             return send data if not filename?
             code =
                 compile-file file, data
+            save-ssr-resource file, code.ls
             if sass?
               save "#{filename}.sass", code.sass
             if commander.fixindents
@@ -165,8 +200,6 @@ compile = (commander, cb)->
                   console.error "#{error 'err compile sass'}  #{yellow err.message}"
               else 
                 sass-c[commander.compile][file] = ""
-            if commander.javascrypt
-                code.js = encrypt code.js
             save "#{filename}.js", code.js
             send code.js
           through write, end
@@ -187,6 +220,11 @@ compile = (commander, cb)->
     if commander.bundle?
       err, bundlec <-! make-bundle file
       return cb2 err if err? 
+      #if commander.javascrypt
+      #   bundlec.js = encrypt bundlec.js
+      if commander.minify
+         bundlec.js = minify-js bundlec.js
+         bundlec.css = minify-css bundlec.css
       if not commander.putinhtml?
          save bundle-js, bundlec.js
       if compilesass? and not commander.putinhtml?
@@ -212,10 +250,13 @@ compile = (commander, cb)->
             | commander.template? => fs.read-file-sync commander.template, \utf8
             | _ => default-template
           html = apply-variables current-template, { dynamicCSS, dynamicHTML }
-          save bundle-html, html
+          result-html =
+            | commander.minify => minify-html html
+            | _ => html
+          save bundle-html, result-html
       if commander.nodestart?
          server-start commander
       if commander.watch
          setup-watch commander
-      cb2 null, "success"
+      cb2 null, \success
 module.exports = compile
