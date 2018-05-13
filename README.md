@@ -8,6 +8,8 @@
 * Build React DOM in functional style
 * Use fast compiler
 
+Highlighting Rules ACE, Cloud9 - https://gist.github.com/askucher/4ffe22d43cba7ef727ae8208c525228b
+
 ## Demo 
 
 [![Demo](https://img.youtube.com/vi/Z5NuIIHBsqg/0.jpg)](https://youtu.be/Z5NuIIHBsqg)
