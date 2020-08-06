@@ -217,6 +217,16 @@ compile = (commander, cb)->
           js: string
         sass-cache.save sass-c
         callback null, result
+    if commander.compile? and not commander.bundle?
+      filename = commander.compile.match(/([a-z-0-9_]+)\.ls$/)?1
+      return cb "expected ls file" if not filename?
+      err, data <- fs.read-file commander.compile, 'utf8'
+      return cb err if err?
+      err, content <- compile-file filename, data
+      return cb err if err?
+      err, data <- fs.write-file filename.replace(/\.ls$/, '.js'), content
+      return cb err if err?
+      cb null
     if commander.bundle?
       err, bundlec <-! make-bundle file
       return cb2 err if err? 
