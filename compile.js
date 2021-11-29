@@ -54,7 +54,7 @@
   warn = baseTitle(yellow, "!");
   ensureDir = function(dir){
     if (!fs.existsSync(dir)) {
-      return fs.mkdirSync(dir);
+      return fs.mkdirSync(dir, { recursive: true});
     }
   };
   ensureDir(compileddir);
